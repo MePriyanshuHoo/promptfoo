@@ -95,7 +95,42 @@ export async function writeCsvToGoogleSheet(rows: CsvRow[], url: string): Promis
     throw new Error(`Invalid Google Sheets URL: ${url}`);
   }
   const spreadsheetId = match[1];
-  const range = 'A1:ZZZ';
+  const gid = new URL(url).searchParams.get('gid');
+
+  let range = 'A1:ZZZ';
+  let sheetId = gid ? Number(gid) : null;
+
+  if (!sheetId) {
+    // Create a new sheet if no gid is provided
+    const newSheetResponse = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      auth,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: `Sheet${Date.now()}`,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    sheetId = newSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId;
+    if (!sheetId) {
+      throw new Error('Failed to create a new sheet');
+    }
+  }
+
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId, auth });
+  const sheetName = spreadsheet.data.sheets?.find((sheet) => sheet.properties?.sheetId === sheetId)
+    ?.properties?.title;
+  if (!sheetName) {
+    throw new Error(`Sheet not found for sheetId: ${sheetId}`);
+  }
+  range = `${sheetName}!${range}`;
 
   // Extract headers from the first row
   const headers = Object.keys(rows[0]);
